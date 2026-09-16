@@ -1,0 +1,23 @@
+{
+  "defaultBackend": "main",
+  "allowedHosts": ["127.0.0.1:8430", "localhost:8430", "memory-mcp.example.com"],
+  "allowedOrigins": [],
+  "backends": [
+    {
+      "id": "main",
+      "serviceId": "default",
+      "memoryEndpoint": "http://127.0.0.1:8420",
+      "panelEndpoint": "http://127.0.0.1:8125",
+      "apiKeySha256": ["REPLACE_WITH_SHA256_OF_MEMORY_GATEWAY_KEY"]
+    }
+  ],
+  "grants": [
+    {
+      "backend": "main",
+      "teamId": "team-your-team",
+      "agentId": "agt-your-agent",
+      "userId": "usr-your-user",
+      "taskIds": ["tm"]
+    }
+  ]
+}

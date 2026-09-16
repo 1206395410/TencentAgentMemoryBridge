@@ -88,6 +88,7 @@ export class V3MemoryClient {
     try {
       const res = await fetch(`${this.baseUrl}${path}`, {
         method: 'POST',
+        redirect: 'error',
         headers: this.headers,
         body: JSON.stringify(body),
         signal: controller.signal,

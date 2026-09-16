@@ -4,6 +4,7 @@ dist/
 *.tsbuildinfo
 .env
 .env.local
+remote-policy.json
 .claude/settings.local.json
 .claude/.memory-store-state.json
 .mcp.json

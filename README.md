@@ -54,6 +54,8 @@ Claude Code / WorkBuddy 把 `ANTHROPIC_BASE_URL`（或 OpenAI 兼容端点）指
 
 MCP 服务器，把记忆工具调用**直连** MemoryCore Gateway（团队版 `/v3/*` 数据面）。配置见 [docs/mcp-bridge-v3.md](docs/mcp-bridge-v3.md)。
 
+支持两种传输：原有本地 **stdio**，以及新增的远程 **Streamable HTTP**。远程客户端只配置 HTTPS 地址和身份请求头，不需要本地 Node.js；服务器逐请求验证个人凭证、团队成员身份和管理员授权范围。部署及 Claude/Multica 配置见 [远程 MCP 指南](docs/remote-mcp.md)。远程模式不会自动开启对话 Hook。
+
 ```jsonc
 // .claude/settings.local.json
 {

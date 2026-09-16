@@ -1,0 +1,9 @@
+{
+  "Authorization": "Bearer YOUR_MEMORY_GATEWAY_KEY",
+  "X-Memory-User-Key": "YOUR_MEMORY_USER_KEY",
+  "X-Memory-Service-Id": "default",
+  "X-Memory-Team-Id": "team-your-team",
+  "X-Memory-Agent-Id": "agt-your-agent",
+  "X-Memory-User-Id": "usr-your-user",
+  "X-Memory-Task-Id": "tm"
+}
