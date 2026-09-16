@@ -1,3 +1,5 @@
+export { WikiClient, type WikiClientConfig, type WikiSummary, type WikiSearchResult, type WikiPageResult } from './wiki-client.js'
+
 export interface V3ClientConfig {
   endpoint: string
   apiKey: string

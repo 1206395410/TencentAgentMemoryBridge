@@ -12,6 +12,8 @@ describe('loadConfig', () => {
     process.env.TEAM_ID = 'team-test'
     process.env.AGENT_ID = 'agt-test'
     process.env.USER_ID = 'usr-test'
+    delete process.env.PANEL_ENDPOINT
+    delete process.env.USER_KEY
   })
 
   afterEach(() => {
@@ -26,6 +28,28 @@ describe('loadConfig', () => {
     expect(config.teamId).toBe('team-test')
     expect(config.agentId).toBe('agt-test')
     expect(config.userId).toBe('usr-test')
+  })
+
+  it('keeps Wiki disabled for existing memory-only configuration', () => {
+    expect(loadConfig().panelEndpoint).toBeUndefined()
+  })
+
+  it('reuses API_KEY for Wiki when USER_KEY is not separately configured', () => {
+    process.env.PANEL_ENDPOINT = 'https://panel.example.test'
+    expect(loadConfig().userKey).toBe('sk-gate')
+  })
+
+  it('prefers an explicit user credential when Wiki is enabled', () => {
+    process.env.PANEL_ENDPOINT = 'https://panel.example.test'
+    process.env.USER_KEY = 'user-credential'
+    expect(loadConfig().panelEndpoint).toBe('https://panel.example.test')
+    expect(loadConfig().userKey).toBe('user-credential')
+  })
+
+  it('rejects Wiki configuration without either credential', () => {
+    process.env.PANEL_ENDPOINT = 'https://panel.example.test'
+    delete process.env.API_KEY
+    expect(() => loadConfig()).toThrow('USER_KEY or API_KEY')
   })
 
   it('generates session key from agent id + date when SESSION_KEY unset', () => {

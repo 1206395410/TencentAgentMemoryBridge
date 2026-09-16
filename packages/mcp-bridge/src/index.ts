@@ -9,9 +9,16 @@ import {
 } from '@modelcontextprotocol/sdk/types.js'
 import { loadConfig } from './config.js'
 import { V3MemoryClient } from './client.js'
+import { WikiClient } from './wiki-client.js'
+import { WIKI_TOOLS, callWikiTool } from './wiki-tools.js'
 
 const config = loadConfig()
 const client = new V3MemoryClient(config)
+const wikiClient = config.panelEndpoint && config.userKey ? new WikiClient({
+  panelEndpoint: config.panelEndpoint, userKey: config.userKey,
+  serviceId: config.serviceId, teamId: config.teamId, userId: config.userId,
+  timeoutMs: config.timeoutMs,
+}) : undefined
 
 const TOOLS: Tool[] = [
   {
@@ -72,7 +79,7 @@ const server = new Server(
   { capabilities: { tools: {} } },
 )
 
-server.setRequestHandler(ListToolsRequestSchema, async () => ({ tools: TOOLS }))
+server.setRequestHandler(ListToolsRequestSchema, async () => ({ tools: [...TOOLS, ...(wikiClient ? WIKI_TOOLS : [])] }))
 
 /**
  * 回显当前隔离上下文（不含任何 key）。让模型/用户明确感知本次调用落在
@@ -95,6 +102,14 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
   const { name, arguments: args } = request.params
 
   try {
+    if (WIKI_TOOLS.some((tool) => tool.name === name)) {
+      if (!wikiClient) throw new Error('Wiki tools require PANEL_ENDPOINT and a valid user credential (USER_KEY or reused API_KEY); existing memory tools remain available')
+      const data = await callWikiTool(wikiClient, name, args)
+      return { content: [{ type: 'text', text: JSON.stringify({
+        ...data,
+        _context: { service_id: config.serviceId, team_id: config.teamId, user_id: config.userId },
+      }) }] }
+    }
     switch (name) {
       case 'recall_memory': {
         const query = args?.query as string

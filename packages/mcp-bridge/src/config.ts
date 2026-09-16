@@ -13,6 +13,8 @@ export interface McpConfig {
   userId: string
   /** 该 agent 的 user_key（可选，用于 meta 面鉴权） */
   userKey?: string
+  /** Optional Panel origin (8125), used for ACL-protected Wiki reads. */
+  panelEndpoint?: string
   /** task_id（可选）：项目级隔离标签（自由字符串，如项目目录名）。与身份 id（team/agent/user）严格分离，拒绝 agt-/team-/usr- 等身份前缀；未配则从项目路径自动派生 */
   taskId?: string
   /** 默认 session key；未配则按 agentId+日期生成 */
@@ -69,6 +71,13 @@ export function loadConfig(): McpConfig {
   const teamId = process.env.TEAM_ID
   const agentId = process.env.AGENT_ID
   const userId = process.env.USER_ID
+  const panelEndpoint = process.env.PANEL_ENDPOINT?.trim() || undefined
+  // Some self-host deployments reuse the same secret for the gateway and user.
+  // Reuse is opt-in via PANEL_ENDPOINT; WikiClient still verifies USER_ID online.
+  const userKey = process.env.USER_KEY?.trim() || (panelEndpoint ? apiKey?.trim() : undefined) || undefined
+  if (panelEndpoint && !userKey) {
+    throw new Error('PANEL_ENDPOINT requires USER_KEY or API_KEY reusable as a Memory user credential')
+  }
 
   const required: Array<[string, string | undefined]> = [
     ['MEMORY_ENDPOINT', endpoint],
@@ -97,7 +106,8 @@ export function loadConfig(): McpConfig {
     teamId: teamId!,
     agentId: agentId!,
     userId: userId!,
-    userKey: process.env.USER_KEY || undefined,
+    userKey,
+    panelEndpoint,
     taskId,
     sessionKey: process.env.SESSION_KEY || generateSessionKey(agentId!),
     timeoutMs,

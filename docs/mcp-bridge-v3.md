@@ -34,23 +34,36 @@ mcp-bridge v3 是 MCP（Model Context Protocol）服务器，把 AI Agent 的记
 
 ### MCP settings.json 示例（Claude Code / CodeBuddy）
 
-```jsonc
-{
-  "mcpServers": {
-    "agent-memory": {
-      "command": "npx",
-      "args": ["@tencent-agent-memory/mcp-bridge"],
-      "env": {
-        "MEMORY_ENDPOINT": "https://memory.kuai-private.top",
-        "API_KEY": "<gate-api-key>",
-        "SERVICE_ID": "default",
-        "TEAM_ID": "<team-id>",
-        "AGENT_ID": "<agent-id>",
-        "USER_ID": "<user-id>"
+从 `git@github.com:1206395410/TencentAgentMemoryBridge.git` 克隆并构建；
+完整命令见 [源码克隆部署步骤](wiki-readonly-mcp.md#windows-构建与验证)。
+启动入口是实际 clone 目录下的 `packages/mcp-bridge/dist/index.js`，不是 npm 发布版。
+构建后，在 clone 的仓库根目录执行以下 PowerShell，自动生成当前机器的 JSON 配置，
+无需写死 Node 或仓库位置。输出中的身份和凭证仍是占位符，使用前需填入自己的实际值：
+
+```powershell
+$BridgeRepo = (Get-Location).Path
+if (-not (Test-Path -LiteralPath (Join-Path $BridgeRepo "packages\mcp-bridge\package.json"))) {
+    throw "请在 clone 的 TencentAgentMemoryBridge 仓库根目录执行（不是 packages 等子目录）"
+}
+$NodeExe = (Get-Command node.exe).Source
+$BridgeEntry = (Resolve-Path -LiteralPath (Join-Path $BridgeRepo "packages\mcp-bridge\dist\index.js")).Path
+@{
+  mcpServers = @{
+    'agent-memory' = @{
+      command = $NodeExe
+      args = @($BridgeEntry)
+      env = @{
+        MEMORY_ENDPOINT = 'http://129.211.92.200:8420'
+        PANEL_ENDPOINT = 'http://129.211.92.200:8125'
+        API_KEY = '<gate-api-key>'
+        SERVICE_ID = 'default'
+        TEAM_ID = '<team-id>'
+        AGENT_ID = '<agent-id>'
+        USER_ID = '<user-id>'
       }
     }
   }
-}
+} | ConvertTo-Json -Depth 5
 ```
 
 > ⚠️ 不要填真实 key 到仓库文件；通过本机 `.env`（已被 `.gitignore` 排除）或 MCP settings 的 env 字段注入。
@@ -71,6 +84,15 @@ mcp-bridge 支持 **task_id** 做项目级区分：
 > 工具结果（≥0.4.0）带 `_context` 回显 `{team_id, agent_id, user_id, task_id}`，调用方可确认当前隔离域，避免 agent/task 混用。
 
 ## 工具
+
+### 可选 Wiki 只读扩展（源码版）
+
+设置 `PANEL_ENDPOINT` 后（`USER_KEY` 未填时复用 `API_KEY`，仍校验用户身份），额外启用 `wiki_list`、`wiki_search`、
+`wiki_read_page`。通过 Panel 8125 的用户鉴权/ACL接口访问 Wiki，不直连无用户鉴权的
+Knowledge 8424。未配置时原有三个工具不变。
+完整构建、客户端配置、权限和测试说明见 [Wiki 只读扩展](wiki-readonly-mcp.md)。
+
+### 原有记忆工具
 
 | 工具 | 映射到 v3 | 说明 |
 | --- | --- | --- |

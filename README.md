@@ -148,11 +148,20 @@ tencent-agent-memory-bridge/
 
 ## 本地开发
 
+源码部署及 Wiki 查询配置见 [克隆、构建与 MCP 配置](docs/wiki-readonly-mcp.md#windows-构建与验证)。
+MCP 启动入口直接使用 clone 目录下的 `packages/mcp-bridge/dist/index.js`。
+
 ```bash
-pnpm install
-pnpm --filter mcp-bridge build
-pnpm --filter mcp-bridge test
+git clone git@github.com:1206395410/TencentAgentMemoryBridge.git
+cd TencentAgentMemoryBridge
+pnpm --filter tencent-agent-memory-mcp-bridge install --frozen-lockfile
+pnpm --filter tencent-agent-memory-mcp-bridge build
+pnpm --filter tencent-agent-memory-mcp-bridge test
+pnpm --filter tencent-agent-memory-mcp-bridge test:stdio
 ```
+
+上述命令使用仓库指定的 pnpm 11.7.0；Windows 可按部署文档使用 `npx.cmd --yes pnpm@11.7.0`。
+已有 clone 不要重复克隆，保留本地修改后再更新。
 
 ## 上游依赖
 
