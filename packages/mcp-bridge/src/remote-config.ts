@@ -1,4 +1,3 @@
-import { createHash, timingSafeEqual } from 'node:crypto'
 import type { IncomingMessage } from 'node:http'
 import type { McpConfig } from './config.js'
 
@@ -10,7 +9,6 @@ export interface RemoteBackend {
   serviceId: string
   memoryEndpoint: string
   panelEndpoint: string
-  apiKeySha256: string[]
 }
 export interface RemotePolicy {
   defaultBackend: string
@@ -53,10 +51,8 @@ export function parseRemotePolicy(value: unknown): RemotePolicy {
   const raw = object(value)
   const backends = list(raw.backends).map(v => {
     const b = object(v)
-    const hashes = list(b.apiKeySha256).map(text)
-    if (hashes.some(h => !/^[a-f0-9]{64}$/.test(h))) throw new Error('apiKeySha256 requires lowercase SHA-256 hashes')
     return { id: id(b.id), serviceId: id(b.serviceId), memoryEndpoint: endpoint(b.memoryEndpoint),
-      panelEndpoint: endpoint(b.panelEndpoint, true), apiKeySha256: hashes }
+      panelEndpoint: endpoint(b.panelEndpoint, true) }
   })
   if (new Set(backends.map(b => b.id)).size !== backends.length) throw new Error('Duplicate backend ID')
   if (new Set(backends.map(b => JSON.stringify([b.serviceId, b.memoryEndpoint, b.panelEndpoint]))).size !== backends.length) throw new Error('Ambiguous backend origins')
@@ -115,8 +111,8 @@ export function resolveRemoteConfig(req: IncomingMessage, policy: RemotePolicy):
       b.memoryEndpoint === endpoint(core) && b.panelEndpoint === endpoint(panel, true))
       : policy.backends.find(b => b.id === policy.defaultBackend && b.serviceId === serviceId)
     if (!backend) throw new RemoteError(403, 'Upstream is not allowed')
-    const digest = createHash('sha256').update(apiKey).digest()
-    if (!backend.apiKeySha256.some(h => timingSafeEqual(digest, Buffer.from(h, 'hex')))) throw new RemoteError(401, 'Invalid Memory credential')
+    // Forward the caller's gateway credential; Core validates it on business requests.
+    // Personal identity and explicit grants remain enforced by the Bridge.
     if (!policy.grants.some(g => g.backend === backend.id && g.teamId === teamId && g.userId === userId &&
       g.agentId === agentId && g.taskIds.includes(taskId))) throw new RemoteError(403, 'Identity or project is not authorized')
     const session = header(req, 'x-memory-session-key', true)

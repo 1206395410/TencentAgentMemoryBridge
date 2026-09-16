@@ -1,14 +1,13 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { createServer, request as httpRequest, type Server as HttpServer } from 'node:http'
-import { createHash } from 'node:crypto'
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js'
 import { createRemoteHttpServer } from '../http-server.js'
 import { parseRemotePolicy, type RemotePolicy } from '../remote-config.js'
 
-const digest = (s: string) => createHash('sha256').update(s).digest('hex')
 const key = 'test-gateway-not-real'
-const requests: Array<{ path: string; body: Record<string, any>; userKey?: string }> = []
+const rotatedKey = 'test-rotated-gateway-not-real'
+const requests: Array<{ path: string; body: Record<string, any>; userKey?: string; authorization?: string }> = []
 let upstream: HttpServer
 let bridge: HttpServer
 let origin: string
@@ -48,8 +47,13 @@ beforeAll(async () => {
     let raw = ''; for await (const chunk of req) raw += chunk
     const body = JSON.parse(raw || '{}')
     const userKey = req.headers['x-tdai-user-key'] as string | undefined
-    requests.push({ path: req.url!, body, userKey })
+    requests.push({ path: req.url!, body, userKey, authorization: req.headers.authorization })
     res.setHeader('Content-Type', 'application/json')
+    if (req.url?.startsWith('/v3/') && ![key, rotatedKey].some(k => req.headers.authorization === `Bearer ${k}`)) {
+      res.writeHead(401)
+      res.end(JSON.stringify({ code: 401, message: 'Invalid upstream credential' }))
+      return
+    }
     let out: unknown
     switch (req.url) {
       case '/api/v1/meta/auth/verify':
@@ -71,7 +75,7 @@ beforeAll(async () => {
   })
   origin = await listen(upstream)
   policy = parseRemotePolicy({ defaultBackend: 'main', allowedHosts: ['127.0.0.1'], allowedOrigins: ['https://multica.example.test'],
-    backends: [{ id: 'main', serviceId: 'default', memoryEndpoint: origin, panelEndpoint: origin, apiKeySha256: [digest(key)] }],
+    backends: [{ id: 'main', serviceId: 'default', memoryEndpoint: origin, panelEndpoint: origin }],
     grants: ['usr-a', 'usr-b'].map(userId => ({ backend: 'main', teamId: 'team-test', userId, agentId: 'agt-test', taskIds: ['tm', 'sfa'] })) })
   bridge = createRemoteHttpServer(policy)
   url = await listen(bridge)
@@ -109,7 +113,7 @@ describe('stateless remote MCP', () => {
   })
 
   it.each([
-    ['Authorization', '', 401], ['Authorization', 'Bearer wrong', 401],
+    ['Authorization', '', 401], ['Authorization', 'Basic wrong', 401],
     ['X-Memory-User-Key', 'key-b', 403], ['X-Memory-User-Key', 'bad-key', 403],
     ['X-Memory-User-Id', 'usr-unknown', 403], ['X-Memory-Team-Id', 'team-other', 403],
     ['X-Memory-Agent-Id', 'agt-other', 403], ['X-Memory-Service-Id', 'other', 403],
@@ -128,6 +132,31 @@ describe('stateless remote MCP', () => {
   it('requires active membership even when explicitly granted', async () => {
     policy.grants.push({ ...policy.grants[0]!, teamId: 'team-off' })
     expect((await raw({ ...headers(), 'X-Memory-Team-Id': 'team-off' })).status).toBe(403)
+  })
+  it('forwards different gateway keys per request without a configured digest', async () => {
+    const a = await connect()
+    const b = await connect({ ...headers('b'), Authorization: `Bearer ${rotatedKey}` })
+    const start = requests.length
+    const results = await Promise.all([a, b].map(c => c.callTool({ name: 'search_memories', arguments: { query: 'test' } })))
+    expect(results.every(r => !r.isError)).toBe(true)
+    const searches = requests.slice(start).filter(r => r.path === '/v3/atomic/search')
+    expect(searches).toHaveLength(2)
+    expect(searches.find(r => r.body.user_id === 'usr-a')?.authorization).toBe(`Bearer ${key}`)
+    expect(searches.find(r => r.body.user_id === 'usr-b')?.authorization).toBe(`Bearer ${rotatedKey}`)
+  })
+  it('leaves gateway credential validation to Core while still requiring personal authentication', async () => {
+    const c = await connect({ ...headers(), Authorization: 'Bearer invalid-gateway' })
+    expect((await c.listTools()).tools).toHaveLength(6)
+    const result = await c.callTool({ name: 'search_memories', arguments: { query: 'test' } })
+    expect(result.isError).toBe(true)
+    expect(JSON.stringify(result)).not.toContain('invalid-gateway')
+    const h: Record<string, string> = { ...headers(), Authorization: 'Bearer invalid-gateway' }
+    delete h['X-Memory-User-Key']
+    expect((await raw(h)).status).toBe(403)
+  })
+  it('ignores obsolete gateway digests in existing policies', () => {
+    const parsed = parseRemotePolicy({ ...policy, backends: [{ ...policy.backends[0], apiKeySha256: ['obsolete-value'] }] })
+    expect(parsed.backends[0]).not.toHaveProperty('apiKeySha256')
   })
   it('allows API_KEY reuse only if Panel verifies its user identity', async () => {
     const h = headers(); delete h['X-Memory-User-Key']
@@ -198,6 +227,5 @@ describe('stateless remote MCP', () => {
     expect(() => parseRemotePolicy({ ...policy, grants: [] })).toThrow()
     expect(() => parseRemotePolicy({ ...policy, allowedHosts: ['*'] })).toThrow()
     expect(() => parseRemotePolicy({ ...policy, backends: [{ ...policy.backends[0], memoryEndpoint: 'http://user:pass@localhost' }] })).toThrow()
-    expect(() => parseRemotePolicy({ ...policy, backends: [{ ...policy.backends[0], apiKeySha256: ['plaintext'] }] })).toThrow()
   })
 })

@@ -16,11 +16,11 @@
 
 ## 2. 服务端安装（Ubuntu）
 
-需要 Git、Node.js（推荐与你已验证的 Node 24 保持一致），以及访问仓库的 SSH 权限。
+需要 Git、Node.js（推荐与你已验证的 Node 24 保持一致）。公开仓库使用 HTTPS 克隆，不需要 GitHub SSH Key。
 以下命令从你选择的父目录执行；已 clone 时直接进入现有仓库，不重新覆盖。
 
 ```bash
-git clone git@github.com:1206395410/TencentAgentMemoryBridge.git
+git clone https://github.com/1206395410/TencentAgentMemoryBridge.git
 ```
 
 ```bash
@@ -57,16 +57,8 @@ cp -n examples/remote-mcp/policy.example.json remote-policy.json
 chmod 600 remote-policy.json
 ```
 
-生成 Core 网关凭证的 SHA-256。下面是一段需要整体执行的脚本，不回显密钥、不把真实值放进命令历史：
-
-```bash
-read -r -s -p '请输入 Memory Core 网关凭证：' MEMORY_GATEWAY_KEY
-printf '\n'
-printf '%s' "$MEMORY_GATEWAY_KEY" | sha256sum
-unset MEMORY_GATEWAY_KEY
-```
-
-将输出的 **64 位十六进制摘要** 填入 `apiKeySha256`；客户端仍使用原始凭证，不是这个摘要。
+服务器无需配置网关 Key 或摘要。客户端在每次请求的 `Authorization: Bearer ...` 中传入原始 Key，Bridge 将它透传给 Core，由 Core 在业务调用时验证。
+旧配置中的 `apiKeySha256` 已不再读取或校验，可以删除；保留该旧字段也不影响启动。用户身份、团队成员、grants、Host/Origin 和后台地址白名单检查仍然保留。
 
 ```bash
 nano remote-policy.json
@@ -81,7 +73,6 @@ nano remote-policy.json
 | `backends[].memoryEndpoint` | Bridge 服务器能够访问的 Core 地址，只能是 HTTP(S) origin |
 | `backends[].panelEndpoint` | Bridge 服务器能够访问的 Panel 地址；接受 origin 或 `/api/v1` 后缀 |
 | `backends[].serviceId` | Core 实例，如 `default` |
-| `backends[].apiKeySha256` | 允许的网关凭证摘要，可填多个用于轮换 |
 | `grants[]` | 管理员显式允许的 backend/team/user/agent/task 组合，无隐式通配授权 |
 
 你现有部署若在同一台 Ubuntu 主机且已映射 8420/8125，可使用模板中的 `127.0.0.1`。若 Bridge 放进独立容器，127.0.0.1 指该容器自己，需要填写 Docker 网络中的服务名等实际地址。
@@ -175,6 +166,7 @@ location = /mcp {
 ```
 
 确认 `_context` 的 user/team/agent/task 正确后，再按需验证 store_memory。验证成功后停用旧的本地同类 MCP，避免模型看见两组工具。
+连接成功或列出工具不代表 Core 已认可网关 Key；尤其使用独立 USER_KEY 时，必须实际调用 search_memories 等 Core 工具验证。Core 拒绝凭证时，工具返回错误，不当作查询成功。
 远程 MCP 不会让 Claude 自动每轮查询或保存；自动化策略需另行配置。
 
 ## 7. Multica
@@ -192,19 +184,19 @@ Headers 示例只是请求头对象，**不是 Multica 完整服务 JSON**；此
 ## 8. 故障与测试
 
 - 400：缺少/非法身份或项目、重复头、未知 X-Memory 头、试图携带 MCP 会话 ID。
-- 401：网关凭证缺失或摘要不匹配（轮换后需要同时更新 policy）。
+- 401：Authorization 缺失或不是有效的 Bearer 格式；Bridge 不再比对网关凭证摘要。
 - 403：用户不匹配、成员不活跃、grants 未授权、Host/Origin 或上游地址不允许。
 - 405：GET/DELETE 到 `/mcp`；无状态模式的预期响应，不表示 POST 工具调用失败。
 - 413：请求正文超过 1 MiB。
 - 429：并发请求过多；稍后重试。
 - 503：Panel 鉴权服务不可用、非预期响应或拒绝跳转；不降级绕过鉴权。
-- 工具 `isError`：参数、Core/Panel 权限或业务错误；远程错误隐藏上游原文，避免泄露密钥。
+- 工具 `isError`：参数、Core/Panel 权限或业务错误（包括 Core 拒绝网关 Key）；远程错误隐藏上游原文，避免泄露密钥。
 
 测试只使用本地模拟 Core/Panel，不调用真实模型，也不向生产记忆写入。覆盖六个工具、两用户并发、相同会话标签隔离、伪造身份、越权、地址白名单、禁止跳转、Host/Origin、载荷与参数限制。本地 stdio 另有 smoke 测试。
 
 ## 9. 安全边界
 
 这是请求头凭证模式，不是 OAuth 登录产品。管理员维护 grants，个人 USER_KEY 用于实时身份验证。
-Policy 中保存的网关摘要只能用于比对；用户凭证不会写入文件或日志。但管理员仍应按敏感配置保护 policy。
+Policy 不保存网关 Key 或摘要；客户端传入的凭证不会写入文件或日志。网关 Key 的有效性由 Core 在业务调用时验证，个人 USER_KEY 仍由 Panel 实时验证。管理员仍应保护 policy 中的授权配置。
 相同用户在不同客户端使用同一身份及 taskId 时可访问同一范围；不同用户是否共享由 Core/Panel 数据与权限规则决定，不通过修改 USER_ID 冒充他人。
 此服务只加固远程 Bridge，不会自动收紧现有公网 Core/Panel：应通过网络规则限制 Core 网关仅被受信任的服务访问，否则持有共享网关密钥的人仍可能绕过 Bridge。
